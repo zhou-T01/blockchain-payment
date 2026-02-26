@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cross-Border Payment DApp</title>
+  <script src="https://cdn.ethers.io/lib/ethers-5.7.umd.min.js"></script>
+  <style>
+    body { font-family: Arial; max-width: 700px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
+    h1 { color: #1F4E79; }
+    h2 { color: #2E75B6; border-bottom: 2px solid #2E75B6; padding-bottom: 8px; }
+    .card { background: white; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { background: #2E75B6; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 5px; }
+    button:hover { background: #1F4E79; }
+    #status { background: #e8f5e9; border-left: 4px solid #4CAF50; padding: 12px; margin: 10px 0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>🌐 Cross-Border Supply Chain Payment System</h1>
+  <p>A decentralized trade settlement DApp powered by Ethereum smart contracts</p>
+
+  <div class="card">
+    <h2>Step 1: Connect Wallet</h2>
+    <button onclick="connectWallet()">Connect MetaMask</button>
+    <p id="walletInfo">Not connected</p>
+  </div>
+
+  <div class="card">
+    <h2>Step 2: Buyer Creates Order & Locks Payment</h2>
+    <input id="sellerAddress" placeholder="Seller wallet address (0x...)" />
+    <input id="amount" placeholder="Payment amount in ETH (e.g. 0.001)" />
+    <button onclick="createOrder()">Create Order & Pay</button>
+  </div>
+
+  <div class="card">
+    <h2>Step 3: Buyer Confirms Delivery (Auto Settlement)</h2>
+    <input id="orderId" placeholder="Order ID (shown after creation)" />
+    <button onclick="confirmDelivery()">Confirm Delivery & Release Payment</button>
+  </div>
+
+  <div class="card">
+    <h2>Query Order Status</h2>
+    <input id="queryOrderId" placeholder="Enter order ID" />
+    <button onclick="getOrder()">Query</button>
+    <div id="orderResult"></div>
+  </div>
+
+  <div id="status">Waiting for action...</div>
+
+  <script>
+    const CONTRACT_ADDRESS = "0x2a2dADD02D68876E70f2eF91C39dCfBB4c229AF8";
+    const ABI = [
+      "function createOrder(address _seller) external payable returns (uint256)",
+      "function confirmDelivery(uint256 _orderId) external",
+      "function getOrder(uint256 _orderId) external view returns (address, address, uint256, bool, bool)",
+      "event OrderCreated(uint256 orderId, address buyer, address seller, uint256 amount)",
+    ];
+
+    let provider, signer, contract;
+
+    async function connectWallet() {
+      if (!window.ethereum) { alert("Please install MetaMask first"); return; }
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send('eth_requestAccounts', []);
+      signer = provider.getSigner();
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      const address = await signer.getAddress();
+      document.getElementById("walletInfo").innerText = "Connected: " + address;
+      document.getElementById("status").innerText = "Wallet connected successfully!";
+    }
+
+    async function createOrder() {
+      try {
+        const seller = document.getElementById("sellerAddress").value;
+        const amount = document.getElementById("amount").value;
+        const tx = await contract.createOrder(seller, { value: ethers.utils.parseEther(amount) });
+        document.getElementById("status").innerText = "Transaction submitted, please wait...";
+        const receipt = await tx.wait();
+        const event = receipt.events.find(e => e.event === 'OrderCreated');
+        const orderId = event.args.orderId.toString();
+        document.getElementById("status").innerText = "Order created successfully! Order ID: " + orderId;
+        document.getElementById("orderId").value = orderId;
+      } catch(e) {
+        document.getElementById("status").innerText = "Error: " + e.message;
+      }
+    }
+
+    async function confirmDelivery() {
+      try {
+        const id = document.getElementById("orderId").value;
+        const tx = await contract.confirmDelivery(id);
+        document.getElementById("status").innerText = "Confirming, please wait...";
+        await tx.wait();
+        document.getElementById("status").innerText = "Confirmed! Payment has been automatically released to seller.";
+      } catch(e) {
+        document.getElementById("status").innerText = "Error: " + e.message;
+      }
+    }
+
+    async function getOrder() {
+      try {
+        const id = document.getElementById("queryOrderId").value;
+        const result = await contract.getOrder(id);
+        document.getElementById("orderResult").innerHTML = `
+          <p>Buyer: ${result[0]}</p>
+          <p>Seller: ${result[1]}</p>
+          <p>Amount: ${ethers.utils.formatEther(result[2])} ETH</p>
+          <p>Delivered: ${result[3] ? 'Yes' : 'No'}</p>
+          <p>Paid: ${result[4] ? 'Yes' : 'No'}</p>
+        `;
+      } catch(e) {
+        document.getElementById("status").innerText = "Error: " + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
